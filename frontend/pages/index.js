@@ -1,0 +1,244 @@
+import { useState } from 'react';
+
+export default function Home() {
+  const [mode, setMode] = useState(''); // 'register', 'login', or 'link'
+  const [step, setStep] = useState(0);
+  const [userId, setUserId] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [token, setToken] = useState('');
+  const [pairingCode, setPairingCode] = useState('');
+  const [deviceId, setDeviceId] = useState('');
+  const [threshold, setThreshold] = useState(2);
+  const [ws, setWs] = useState(null);
+  const [wsMsg, setWsMsg] = useState('');
+  const [apiResult, setApiResult] = useState('');
+  const [connectedDevices, setConnectedDevices] = useState([]);
+
+  // Register user (first device)
+  const register = async () => {
+    const res = await fetch('/api/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    console.log('Register response:', res);
+    let data;
+    try {
+      data = await res.json();
+      console.log('Register response JSON:', data);
+    } catch (err) {
+      console.error('Register response JSON error:', err);
+      setApiResult('Error: Invalid JSON response');
+      return;
+    }
+    setUserId(data.id);
+    setApiResult(JSON.stringify(data, null, 2));
+    // Simulate token for demo
+    setToken('demo-token');
+    setStep(1);
+  };
+
+  // Login user (existing)
+  const login = async () => {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    console.log('Login response:', res);
+    let data;
+    try {
+      data = await res.json();
+      console.log('Login response JSON:', data);
+    } catch (err) {
+      console.error('Login response JSON error:', err);
+      setApiResult('Error: Invalid JSON response');
+      return;
+    }
+    setUserId(data.id || '');
+    setToken(data.token || '');
+    setApiResult(JSON.stringify(data, null, 2));
+    if (data.id && data.token) setStep(1);
+  };
+
+  // Start pairing session
+  const startPairing = async () => {
+    const res = await fetch('/api/pairing/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: userId, threshold })
+    });
+    console.log('StartPairing response:', res);
+    let data;
+    try {
+      data = await res.json();
+      console.log('StartPairing response JSON:', data);
+    } catch (err) {
+      console.error('StartPairing response JSON error:', err);
+      setApiResult('Error: Invalid JSON response');
+      return;
+    }
+    setPairingCode(data.pairing_code);
+    setApiResult(JSON.stringify(data, null, 2));
+    setStep(2);
+  };
+
+  // Link device (additional device)
+  const linkDevice = async () => {
+    const res = await fetch('/api/pairing/link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pairing_code: pairingCode, device_id: deviceId })
+    });
+    console.log('LinkDevice response:', res);
+    let data;
+    try {
+      data = await res.json();
+      console.log('LinkDevice response JSON:', data);
+    } catch (err) {
+      console.error('LinkDevice response JSON error:', err);
+      setApiResult('Error: Invalid JSON response');
+      return;
+    }
+    setApiResult(JSON.stringify(data, null, 2));
+    setStep(3);
+  };
+
+  // Complete pairing and keygen
+  const completePairing = async () => {
+    const res = await fetch('/api/pairing/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pairing_code: pairingCode })
+    });
+    console.log('CompletePairing response:', res);
+    let data;
+    try {
+      data = await res.json();
+      console.log('CompletePairing response JSON:', data);
+    } catch (err) {
+      console.error('CompletePairing response JSON error:', err);
+      setApiResult('Error: Invalid JSON response');
+      return;
+    }
+    setApiResult(JSON.stringify(data, null, 2));
+    setStep(4);
+  };
+
+  // Connect WebSocket and send initial device info
+  const connectWs = () => {
+    setWsMsg('Connecting to WebSocket...');
+    const socket = new WebSocket('wss://automatic-barnacle-qvvp65v66663xj9v-40715.app.github.dev/api/tss/ws');
+    socket.onopen = () => {
+      setWsMsg('WebSocket connected. Sending device info...');
+      // Send initial device_id and pairing_code
+      const did = mode === 'register' || mode === 'login' ? userId : deviceId;
+      socket.send(JSON.stringify({ device_id: did, pairing_code }));
+    };
+    socket.onerror = (e) => {
+      setWsMsg('WebSocket error: ' + (e.message || 'Unknown error'));
+    };
+    socket.onclose = () => {
+      setWsMsg('WebSocket closed');
+    };
+    socket.onmessage = (e) => {
+      let msgText = e.data;
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.status) {
+          msgText = `Status: ${msg.status} (device_id: ${msg.device_id || ''})`;
+        }
+        if (msg.connected_devices) {
+          setConnectedDevices(msg.connected_devices);
+          msgText = 'Connected devices update: ' + msg.connected_devices.join(', ');
+        }
+      } catch {}
+      setWsMsg('WebSocket message: ' + msgText);
+    };
+    setWs(socket);
+  };
+
+  return (
+    <div style={{ maxWidth: 400, margin: 'auto', padding: 20 }}>
+      <h1>nokey Demo</h1>
+      {!mode && (
+        <div>
+          <button onClick={() => { setMode('register'); setStep(0); }}>Register (First Device)</button>
+          <button onClick={() => { setMode('login'); setStep(0); }}>Login (Existing User)</button>
+          <button onClick={() => { setMode('link'); setStep(0); }}>Link Device (Other Device)</button>
+        </div>
+      )}
+      <pre style={{ background: '#f4f4f4', padding: 10 }}>{apiResult}</pre>
+      {connectedDevices.length > 0 && (
+        <div style={{ background: '#e0f7fa', padding: 10, marginBottom: 10 }}>
+          <b>Connected Devices:</b>
+          <ul>
+            {connectedDevices.map((d, i) => <li key={i}>{d}</li>)}
+          </ul>
+        </div>
+      )}
+      {mode === 'register' && step === 0 && (
+        <div>
+          <h2>Register</h2>
+          <input placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} /><br />
+          <input placeholder="Password" type="password" value={password} onChange={e => setPassword(e.target.value)} /><br />
+          <button onClick={register}>Register</button>
+        </div>
+      )}
+      {mode === 'login' && step === 0 && (
+        <div>
+          <h2>Login</h2>
+          <input placeholder="Username" value={username} onChange={e => setUsername(e.target.value)} /><br />
+          <input placeholder="Password" type="password" value={password} onChange={e => setPassword(e.target.value)} /><br />
+          <button onClick={login}>Login</button>
+        </div>
+      )}
+      {(mode === 'register' || mode === 'login') && step === 1 && (
+        <div>
+          <h2>Start Pairing</h2>
+          <div>User ID: <b>{userId}</b></div>
+          <div>Token: <b>{token}</b></div>
+          <input placeholder="Threshold" type="number" value={threshold} onChange={e => setThreshold(Number(e.target.value))} /><br />
+          <button onClick={startPairing}>Start Pairing</button>
+        </div>
+      )}
+      {(mode === 'register' || mode === 'login') && step === 2 && (
+        <div>
+          <h2>Pairing Code</h2>
+          <div>Pairing Code: <b>{pairingCode}</b></div>
+          <button onClick={connectWs}>Connect WebSocket</button>
+          <div>WS Message: {wsMsg}</div>
+        </div>
+      )}
+      {mode === 'link' && step === 0 && (
+        <div>
+          <h2>Link Device</h2>
+          <input placeholder="Pairing Code" value={pairingCode} onChange={e => setPairingCode(e.target.value)} /><br />
+          <input placeholder="Device ID" value={deviceId} onChange={e => setDeviceId(e.target.value)} /><br />
+          <button onClick={linkDevice}>Link Device</button>
+        </div>
+      )}
+      {mode === 'link' && step === 3 && (
+        <div>
+          <h2>Device Linked</h2>
+          <button onClick={connectWs}>Connect WebSocket</button>
+          <div>WS Message: {wsMsg}</div>
+        </div>
+      )}
+      {(mode === 'register' || mode === 'login') && step === 2 && (
+        <div>
+          <h2>Complete Pairing & Keygen</h2>
+          <button onClick={completePairing}>Complete & Keygen</button>
+        </div>
+      )}
+      {(mode === 'register' || mode === 'login') && step === 4 && (
+        <div>
+          <h2>Keygen Complete</h2>
+          <button onClick={connectWs}>Connect WebSocket</button>
+          <div>WS Message: {wsMsg}</div>
+        </div>
+      )}
+    </div>
+  );
+}

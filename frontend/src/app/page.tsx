@@ -126,16 +126,16 @@ export default function Home() {
   };
 
   // Connect WebSocket and send initial device info
+  // Connect WebSocket and send device_id as first message, handle key_share
   const connectWs = () => {
     setWsMsg('Connecting to WebSocket...');
     const socket = new WebSocket(WS_BASE);
     socket.onopen = () => {
-      setWsMsg('WebSocket connected. Sending device info...');
+      setWsMsg('WebSocket connected. Sending device_id...');
       const did = mode === 'register' || mode === 'login' ? userId : deviceId;
-      socket.send(JSON.stringify({ device_id: did, pairingCode }));
+      socket.send(JSON.stringify({ device_id: did }));
     };
     socket.onerror = (e: Event) => {
-      // Try to get error message from event
       let errorMsg = 'Unknown error';
       if ('message' in e) {
         // @ts-ignore
@@ -150,6 +150,14 @@ export default function Home() {
       let msgText = e.data;
       try {
         const msg = JSON.parse(e.data);
+        if (msg.type === 'key_share' && msg.device_id) {
+          // Store key share in localStorage
+          localStorage.setItem('key_share', JSON.stringify(msg.key_share));
+          setWsMsg(`[WS] Received key share for device: ${msg.device_id}`);
+          // Send acknowledgement
+          socket.send(JSON.stringify({ type: 'ack', device_id: msg.device_id }));
+          return;
+        }
         if (msg.status) {
           msgText = `Status: ${msg.status} (device_id: ${msg.device_id || ''})`;
         }

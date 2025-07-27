@@ -5,8 +5,78 @@ import (
 	"fmt"
 	"github.com/gogf/gf/v2/frame/g"
 	"github.com/gogf/gf/v2/net/ghttp"
-	"github.com/google/uuid"
+ "github.com/google/uuid"
 )
+
+
+// Send key share to device via WebSocket (final robust version)
+func sendKeyShareToDevice(deviceID string, share interface{}) {
+	wsDeviceConnsMutex.Lock()
+	conn, ok := wsDeviceConns[deviceID]
+	wsDeviceConnsMutex.Unlock()
+	if !ok || conn == nil {
+		fmt.Printf("[WS] No active WebSocket for device %s\n", deviceID)
+		return
+	}
+	msg := g.Map{
+		"type": "key_share",
+		"device_id": deviceID,
+		"key_share": share,
+	}
+	if err := conn.WriteJSON(msg); err != nil {
+		fmt.Printf("[WS] Error sending key share to device %s: %v\n", deviceID, err)
+	} else {
+		fmt.Printf("[WS] Sent key share to device %s\n", deviceID)
+	}
+}
+
+// WebSocket handler: expects device to send its device_id as first message
+// func TSSWebSocketHandler(r *ghttp.Request) {
+// 	ws, err := r.WebSocket()
+// 	if err != nil || ws == nil {
+// 		r.Response.WriteJson(g.Map{"error": "WebSocket upgrade failed"})
+// 		return
+// 	}
+// 	// Wait for device to send its device_id as first message
+// 	var deviceID string
+// 	_, msg, err := ws.ReadMessage()
+// 	if err != nil {
+// 		fmt.Printf("[WS] Error reading device_id: %v\n", err)
+// 		ws.Close()
+// 		return
+// 	}
+// 	var m map[string]interface{}
+// 	if err := gjson.DecodeTo(msg, &m); err == nil {
+// 		if id, ok := m["device_id"].(string); ok {
+// 			deviceID = id
+// 		}
+// 	}
+// 	if deviceID == "" {
+// 		fmt.Printf("[WS] No device_id provided on connect\n")
+// 		ws.Close()
+// 		return
+// 	}
+// 	// Register deviceID -> ws connection
+// 	wsDeviceConnsMutex.Lock()
+// 	wsDeviceConns[deviceID] = ws
+// 	wsDeviceConnsMutex.Unlock()
+// 	fmt.Printf("[WS] Registered device %s with WebSocket\n", deviceID)
+// 	// Optionally: handle further messages or keep connection alive
+// 	for {
+// 		_, msg, err := ws.ReadMessage()
+// 		if err != nil {
+// 			fmt.Printf("[WS] Device %s disconnected: %v\n", deviceID, err)
+// 			break
+// 		}
+// 		// Handle acknowledgements or other messages if needed
+// 		fmt.Printf("[WS] Received from %s: %s\n", deviceID, string(msg))
+// 	}
+// 	// Cleanup on disconnect
+// 	wsDeviceConnsMutex.Lock()
+// 	delete(wsDeviceConns, deviceID)
+// 	wsDeviceConnsMutex.Unlock()
+// 	fmt.Printf("[WS] Device %s WebSocket removed\n", deviceID)
+// }
 
 type PairingSession struct {
 	UserID      string
@@ -116,12 +186,20 @@ func CompletePairingAndKeygen(r *ghttp.Request) {
 			return
 		}
 		session.Active = false
-		// TODO: Distribute shares via WebSocket to devices
+		// Send key shares to devices via WebSocket
+		for i, id := range session.DeviceIDs {
+			share := keySaves[i]
+			// sendKeyShareToDevice should send { key_share, device_id } to the device via WebSocket
+			sendKeyShareToDevice(id, share)
+		}
+		// Only send main device's share in API response
+		mainDeviceID := session.DeviceIDs[0]
 		r.Response.WriteJson(g.Map{
 			"message": "Keygen complete",
+			"device_id": mainDeviceID,
+			"key_share": keySaves[0],
 			"devices": session.DeviceIDs,
 			"parties": partyIDs,
-			"key_shares": keySaves,
 		})
 		return
 	}

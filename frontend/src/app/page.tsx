@@ -1,7 +1,17 @@
+
+"use client";
 import { useState } from 'react';
 
 export default function Home() {
-  const [mode, setMode] = useState(''); // 'register', 'login', or 'link'
+  // Helper to generate UUID v4
+  function uuidv4() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = crypto.getRandomValues(new Uint8Array(1))[0] % 16;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+  const [mode, setMode] = useState('');
   const [step, setStep] = useState(0);
   const [userId, setUserId] = useState('');
   const [username, setUsername] = useState('');
@@ -10,53 +20,51 @@ export default function Home() {
   const [pairingCode, setPairingCode] = useState('');
   const [deviceId, setDeviceId] = useState('');
   const [threshold, setThreshold] = useState(2);
-  const [ws, setWs] = useState(null);
+  const [ws, setWs] = useState<WebSocket | null>(null);
   const [wsMsg, setWsMsg] = useState('');
   const [apiResult, setApiResult] = useState('');
   const [connectedDevices, setConnectedDevices] = useState([]);
 
+  const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:40715/api';
+  const WS_BASE = process.env.NEXT_PUBLIC_WS_BASE || 'ws://localhost:40715/api/tss/ws';
+
   // Register user (first device)
   const register = async () => {
-    const res = await fetch('/api/register', {
+    const res = await fetch(`${API_BASE}/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password })
     });
-    console.log('Register response:', res);
     let data;
     try {
       data = await res.json();
-      console.log('Register response JSON:', data);
     } catch (err) {
-      console.error('Register response JSON error:', err);
       setApiResult('Error: Invalid JSON response');
       return;
     }
     setUserId(data.id);
+    setDeviceId(data.id);
     setApiResult(JSON.stringify(data, null, 2));
-    // Simulate token for demo
     setToken('demo-token');
     setStep(1);
   };
 
   // Login user (existing)
   const login = async () => {
-    const res = await fetch('/api/login', {
+    const res = await fetch(`${API_BASE}/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password })
     });
-    console.log('Login response:', res);
     let data;
     try {
       data = await res.json();
-      console.log('Login response JSON:', data);
     } catch (err) {
-      console.error('Login response JSON error:', err);
       setApiResult('Error: Invalid JSON response');
       return;
     }
     setUserId(data.id || '');
+    setDeviceId(data.id);
     setToken(data.token || '');
     setApiResult(JSON.stringify(data, null, 2));
     if (data.id && data.token) setStep(1);
@@ -64,18 +72,15 @@ export default function Home() {
 
   // Start pairing session
   const startPairing = async () => {
-    const res = await fetch('/api/pairing/start', {
+    const res = await fetch(`${API_BASE}/pairing/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: userId, threshold })
+      body: JSON.stringify({ user_id: userId, device_id: deviceId, threshold })
     });
-    console.log('StartPairing response:', res);
     let data;
     try {
       data = await res.json();
-      console.log('StartPairing response JSON:', data);
     } catch (err) {
-      console.error('StartPairing response JSON error:', err);
       setApiResult('Error: Invalid JSON response');
       return;
     }
@@ -86,18 +91,15 @@ export default function Home() {
 
   // Link device (additional device)
   const linkDevice = async () => {
-    const res = await fetch('/api/pairing/link', {
+    const res = await fetch(`${API_BASE}/pairing/link`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pairing_code: pairingCode, device_id: deviceId })
     });
-    console.log('LinkDevice response:', res);
     let data;
     try {
       data = await res.json();
-      console.log('LinkDevice response JSON:', data);
     } catch (err) {
-      console.error('LinkDevice response JSON error:', err);
       setApiResult('Error: Invalid JSON response');
       return;
     }
@@ -107,18 +109,15 @@ export default function Home() {
 
   // Complete pairing and keygen
   const completePairing = async () => {
-    const res = await fetch('/api/pairing/complete', {
+    const res = await fetch(`${API_BASE}/pairing/complete`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pairing_code: pairingCode })
     });
-    console.log('CompletePairing response:', res);
     let data;
     try {
       data = await res.json();
-      console.log('CompletePairing response JSON:', data);
     } catch (err) {
-      console.error('CompletePairing response JSON error:', err);
       setApiResult('Error: Invalid JSON response');
       return;
     }
@@ -129,15 +128,20 @@ export default function Home() {
   // Connect WebSocket and send initial device info
   const connectWs = () => {
     setWsMsg('Connecting to WebSocket...');
-    const socket = new WebSocket('wss://automatic-barnacle-qvvp65v66663xj9v-40715.app.github.dev/api/tss/ws');
+    const socket = new WebSocket(WS_BASE);
     socket.onopen = () => {
       setWsMsg('WebSocket connected. Sending device info...');
-      // Send initial device_id and pairing_code
       const did = mode === 'register' || mode === 'login' ? userId : deviceId;
-      socket.send(JSON.stringify({ device_id: did, pairing_code }));
+      socket.send(JSON.stringify({ device_id: did, pairingCode }));
     };
-    socket.onerror = (e) => {
-      setWsMsg('WebSocket error: ' + (e.message || 'Unknown error'));
+    socket.onerror = (e: Event) => {
+      // Try to get error message from event
+      let errorMsg = 'Unknown error';
+      if ('message' in e) {
+        // @ts-ignore
+        errorMsg = e.message;
+      }
+      setWsMsg('WebSocket error: ' + errorMsg);
     };
     socket.onclose = () => {
       setWsMsg('WebSocket closed');
@@ -215,8 +219,12 @@ export default function Home() {
         <div>
           <h2>Link Device</h2>
           <input placeholder="Pairing Code" value={pairingCode} onChange={e => setPairingCode(e.target.value)} /><br />
-          <input placeholder="Device ID" value={deviceId} onChange={e => setDeviceId(e.target.value)} /><br />
-          <button onClick={linkDevice}>Link Device</button>
+          <button onClick={() => {
+            const uuid = uuidv4();
+            setDeviceId(uuid);
+            linkDevice();
+          }}>Link Device</button>
+          {deviceId && <div>Generated Device ID: <b>{deviceId}</b></div>}
         </div>
       )}
       {mode === 'link' && step === 3 && (

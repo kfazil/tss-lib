@@ -17,10 +17,19 @@ func main() {
 	s.SetPort(40715)
 	// Global middleware to log every HTTP request
 	s.Use(func(r *ghttp.Request) {
-		fmt.Printf("[HTTP] %s %s from %s\n", r.Method, r.RequestURI, r.RemoteAddr)
-		for k, v := range r.Header {
-			fmt.Printf("[HTTP] Header: %s=%v\n", k, v)
+		// CORS headers
+		r.Response.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
+		r.Response.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		r.Response.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		r.Response.Header().Set("Access-Control-Allow-Credentials", "true")
+		if r.Method == "OPTIONS" {
+			r.Response.WriteStatus(200)
+			return
 		}
+		fmt.Printf("[HTTP] %s %s from %s\n", r.Method, r.RequestURI, r.RemoteAddr)
+		// for k, v := range r.Header {
+		// 	fmt.Printf("[HTTP] Header: %s=%v\n", k, v)
+		// }
 		r.Middleware.Next()
 	})
 

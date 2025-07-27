@@ -1,3 +1,18 @@
+# Node modules and build output
+node_modules/
+frontend/.next/
+
+# Logs
+*.log
+# OS files
+.DS_Store
+Thumbs.db
+# Env files
+.env
+.env.local
+.env.*.local
+# VSCode
+.vscode/
 build
 vendor
 .DS_Store

@@ -11,5 +11,3 @@ Features:
 To run: (after setup)
 - `npm install`
 - `npm run dev`
-
-This demo is for showcasing the backend flow and device coordination.

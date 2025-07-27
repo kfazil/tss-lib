@@ -33,25 +33,34 @@ func main() {
 		r.Middleware.Next()
 	})
 
-	s.Group("/api", func(group *ghttp.RouterGroup) {
-		// Public endpoints
-		group.GET("/health", HealthCheck)
-		group.POST("/register", RegisterUser)
-		group.POST("/login", LoginUser)
-		group.POST("/pairing/start", StartPairingSession)
-		group.POST("/pairing/link", LinkDeviceWithPairingCode)
-		group.POST("/pairing/complete", CompletePairingAndKeygen)
-		group.GET("/tss/ws", TSSWebSocketHandler)
+	   s.Group("/api", func(group *ghttp.RouterGroup) {
+			   // Public endpoints
+			   group.GET("/health", HealthCheck)
+			   group.POST("/register", RegisterUser)
+			   group.POST("/login", LoginUser)
+			   group.POST("/pairing/start", StartPairingSession)
+			   group.POST("/pairing/link", LinkDeviceWithPairingCode)
+			   group.POST("/pairing/complete", CompletePairingAndKeygen)
+			   group.GET("/tss/ws", TSSWebSocketHandler)
 
-		// Protected endpoints
-		group.Group("/", func(protected *ghttp.RouterGroup) {
-			protected.Middleware(AuthMiddleware)
-			protected.POST("/device/register", RegisterDevice)
-			protected.POST("/device/threshold", SetupThreshold)
-			protected.POST("/encrypt", EncryptData)
-			protected.POST("/decrypt", DecryptData)
-		})
-	})
+			   // Signing session endpoints
+			   group.POST("/signing/start", StartSigningSession)
+			   group.POST("/signing/join", JoinSigningSession)
+			   group.GET("/signing/info", GetSigningSessionInfo)
+
+			   // Message encryption/decryption endpoints
+			   group.POST("/message/store", StoreEncryptedMessage) // now uses TSS signing
+			   group.POST("/message/decrypt", DecryptStoredMessage)
+
+			   // Protected endpoints
+			   group.Group("/", func(protected *ghttp.RouterGroup) {
+					   protected.Middleware(AuthMiddleware)
+					   protected.POST("/device/register", RegisterDevice)
+					   protected.POST("/device/threshold", SetupThreshold)
+					   protected.POST("/encrypt", EncryptData)
+					   protected.POST("/decrypt", DecryptData)
+			   })
+	   })
 
 	s.Run()
 }

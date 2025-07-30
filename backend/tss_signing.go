@@ -1,35 +1,32 @@
 package main
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/sha256"
-	"encoding/json"
-	"fmt"
-	"io"
-	"os"
-	"sync"
-	"github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
-	"github.com/bnb-chain/tss-lib/v2/ecdsa/signing"
-	"github.com/bnb-chain/tss-lib/v2/tss"
-	"github.com/bnb-chain/tss-lib/v2/common"
-	"github.com/gogf/gf/v2/frame/g"
-	"github.com/gogf/gf/v2/net/ghttp"
+	   "crypto/aes"
+	   "crypto/cipher"
+	   "crypto/sha256"
+	   "encoding/json"
+	   "fmt"
+	   "io"
+	   "os"
+	   "sync"
+	   "math/big"
+	   "github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
+	   "github.com/bnb-chain/tss-lib/v2/ecdsa/signing"
+	   "github.com/bnb-chain/tss-lib/v2/tss"
+	   "github.com/bnb-chain/tss-lib/v2/common"
+	   "github.com/gogf/gf/v2/frame/g"
+	   "github.com/gogf/gf/v2/net/ghttp"
 )
 
 // MessageStore holds encrypted messages
 // Each message is encrypted with a threshold signature
 
-type EncryptedMessage struct {
-	ID           string
-	UserID       string
-	Ciphertext   []byte
-	SessionID    string
-}
+// EncryptedMessage type is now in types.go
+// Remove duplicate type definition
 
 var (
-	messageStore      = make(map[string]*EncryptedMessage)
-	messageStoreMutex sync.Mutex
+	   messageStore      = make(map[string]*EncryptedMessage)
+	   messageStoreMutex sync.Mutex
 )
 
 // Helper: Load key share from file (replace with DB in production)
@@ -95,53 +92,80 @@ func StoreEncryptedMessage(r *ghttp.Request) {
 			   r.Response.WriteJson(g.Map{"error": "Failed to parse key share for device 2"})
 			   return
 	   }
-	// Create TSS parties
-	party1ID := tss.NewPartyID("P1", req.DeviceIDs[0], key1.Ks[0])
-	party2ID := tss.NewPartyID("P2", req.DeviceIDs[1], key2.Ks[0])
-	partyIDs := tss.SortPartyIDs([]*tss.PartyID{party1ID, party2ID})
-	peerCtx := tss.NewPeerContext(partyIDs)
-	params := []*tss.Parameters{
-		tss.NewParameters(tss.S256(), peerCtx, party1ID, 2, 1),
-		tss.NewParameters(tss.S256(), peerCtx, party2ID, 2, 1),
-	}
-	msg := []byte(req.Message)
-	msgInt := new(big.Int).SetBytes(msg)
-	outs := []chan tss.Message{make(chan tss.Message, 100), make(chan tss.Message, 100)}
-	ends := []chan *common.SignatureData{make(chan *common.SignatureData, 1), make(chan *common.SignatureData, 1)}
-	// Start parties
-	party1 := signing.NewLocalParty(msgInt, params[0], *key1, outs[0], ends[0])
-	party2 := signing.NewLocalParty(msgInt, params[1], *key2, outs[1], ends[1])
-	go party1.Start()
-	go party2.Start()
-	// Orchestrate protocol
-	var sig *common.SignatureData
-	for sig == nil {
-		select {
-		case m := <-outs[0]:
-			party2.UpdateFromBytes(m.WireBytesNoSig(), party1ID, true)
-		case m := <-outs[1]:
-			party1.UpdateFromBytes(m.WireBytesNoSig(), party2ID, true)
-		case s := <-ends[0]:
-			sig = s
-		case s := <-ends[1]:
-			sig = s
-		}
-	}
-	// Encrypt message
-	ciphertext, err := encryptWithSignatureKey(req.Message, sig)
-	if err != nil {
-		r.Response.WriteJson(g.Map{"error": "Encryption failed"})
-		return
-	}
-	id := req.SessionID
-	messageStoreMutex.Lock()
-	messageStore[id] = &EncryptedMessage{
-		ID:         id,
-		UserID:     req.UserID,
-		Ciphertext: ciphertext,
-		SessionID:  req.SessionID,
-	}
-	messageStoreMutex.Unlock()
-	// Respond with stored message ID
-	r.Response.WriteJson(g.Map{"message": "Message encrypted and stored", "id": id})
+	   // Create TSS parties
+	   party1ID := tss.NewPartyID("P1", req.DeviceIDs[0], key1.Ks[0])
+	   party2ID := tss.NewPartyID("P2", req.DeviceIDs[1], key2.Ks[0])
+	   partyIDs := tss.SortPartyIDs([]*tss.PartyID{party1ID, party2ID})
+	   peerCtx := tss.NewPeerContext(partyIDs)
+	   params := []*tss.Parameters{
+			   tss.NewParameters(tss.S256(), peerCtx, party1ID, 2, 1),
+			   tss.NewParameters(tss.S256(), peerCtx, party2ID, 2, 1),
+	   }
+	   msg := []byte(req.Message)
+	   msgInt := new(big.Int).SetBytes(msg)
+	   outs := []chan tss.Message{make(chan tss.Message, 100), make(chan tss.Message, 100)}
+	   ends := []chan *common.SignatureData{make(chan *common.SignatureData, 1), make(chan *common.SignatureData, 1)}
+	   // Start parties
+	   party1 := signing.NewLocalParty(msgInt, params[0], key1, outs[0], ends[0])
+	   party2 := signing.NewLocalParty(msgInt, params[1], key2, outs[1], ends[1])
+	   go party1.Start()
+	   go party2.Start()
+	   // Orchestrate protocol
+	   var sig *common.SignatureData
+	   for sig == nil {
+			   select {
+			   case m := <-outs[0]:
+					   wire, _, _ := m.WireBytes()
+					   party2.UpdateFromBytes(wire, party1ID, true)
+			   case m := <-outs[1]:
+					   wire, _, _ := m.WireBytes()
+					   party1.UpdateFromBytes(wire, party2ID, true)
+			   case s := <-ends[0]:
+					   sig = s
+			   case s := <-ends[1]:
+					   sig = s
+			   }
+	   }
+// ...existing code...
+// Encrypt message
+	   ciphertext, err := encryptWithSignatureKey(req.Message, sig)
+	   if err != nil {
+			   r.Response.WriteJson(g.Map{"error": "Encryption failed"})
+			   return
+	   }
+	   id := req.SessionID
+	   messageStoreMutex.Lock()
+	   messageStore[id] = &EncryptedMessage{
+			   ID:         id,
+			   UserID:     req.UserID,
+			   Ciphertext: ciphertext,
+			   SessionID:  req.SessionID,
+	   }
+	   messageStoreMutex.Unlock()
+	   // Respond with stored message ID
+	   r.Response.WriteJson(g.Map{"message": "Message encrypted and stored", "id": id})
+}
+
+// Decrypt message (stub for now, real TSS decryption not implemented)
+func DecryptStoredMessage(r *ghttp.Request) {
+	   type Req struct {
+			   UserID    string `json:"user_id"`
+			   MessageID string `json:"message_id"`
+			   SessionID string `json:"session_id"`
+	   }
+	   var req Req
+	   if err := r.Parse(&req); err != nil {
+			   r.Response.WriteJson(g.Map{"error": "Invalid request"})
+			   return
+	   }
+	   messageStoreMutex.Lock()
+	   _, ok := messageStore[req.MessageID]
+	   messageStoreMutex.Unlock()
+	   if !ok {
+			   r.Response.WriteJson(g.Map{"error": "Message not found"})
+			   return
+	   }
+	   // Here, coordinate TSS decryption using sessionID (stub for now)
+	   plaintext := "decrypted:" // Replace with real decryption using TSS
+	   r.Response.WriteJson(g.Map{"message": "Message decrypted (stub)", "plaintext": plaintext})
 }

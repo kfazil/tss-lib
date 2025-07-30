@@ -1,17 +1,23 @@
 package main
 
 import (
-	"fmt"
-
-	"github.com/gogf/gf/v2/frame/g"
-	"github.com/gogf/gf/v2/net/ghttp"
+	   "fmt"
+	   "log"
+	   "github.com/gogf/gf/v2/frame/g"
+	   "github.com/gogf/gf/v2/net/ghttp"
+	   "github.com/joho/godotenv"
+// ...existing code...
 )
 
 func main() {
-	// Initialize persistent storage
-	if err := InitDB(); err != nil {
-		panic("Failed to initialize DB: " + err.Error())
-	}
+	   // Load .env file for configs
+	   if err := godotenv.Load(".env"); err != nil {
+			   log.Printf("No .env file found or error loading: %v", err)
+	   }
+	   // Initialize persistent storage
+	   if err := InitDB(); err != nil {
+			   panic("Failed to initialize DB: " + err.Error())
+	   }
 
 	s := g.Server()
 	s.SetPort(40715)
@@ -49,8 +55,8 @@ func main() {
 			   group.GET("/signing/info", GetSigningSessionInfo)
 
 			   // Message encryption/decryption endpoints
-			   group.POST("/message/store", StoreEncryptedMessage) // now uses TSS signing
-			   group.POST("/message/decrypt", DecryptStoredMessage)
+		  group.POST("/message/store", StoreEncryptedMessage) // now uses TSS signing
+		  group.POST("/message/decrypt", DecryptStoredMessage)
 
 			   // Protected endpoints
 			   group.Group("/", func(protected *ghttp.RouterGroup) {
@@ -65,15 +71,4 @@ func main() {
 	s.Run()
 }
 
-func EncryptData(r *ghttp.Request) {
-	r.Response.WriteJson(g.Map{"message": "Data encrypted (stub)"})
-}
-
-func DecryptData(r *ghttp.Request) {
-	r.Response.WriteJson(g.Map{"message": "Data decrypted (stub)"})
-}
-
-// HealthCheck endpoint
-func HealthCheck(r *ghttp.Request) {
-	r.Response.WriteJson(map[string]string{"status": "ok"})
-}
+// Stubs are now in stubs.go

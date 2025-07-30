@@ -70,13 +70,13 @@ func JoinSigningSession(r *ghttp.Request) {
 
 // Get session info (for debugging/UI)
 func GetSigningSessionInfo(r *ghttp.Request) {
-	sessionID := r.Get("session_id")
-	signingSessionsMutex.Lock()
-	session, ok := signingSessions[sessionID]
-	signingSessionsMutex.Unlock()
-	if !ok {
-		r.Response.WriteJson(g.Map{"error": "Session not found"})
-		return
-	}
-	r.Response.WriteJson(g.Map{"session": session})
+	   sessionID := r.Get("session_id")
+	   signingSessionsMutex.Lock()
+	   session, ok := signingSessions[sessionID.String()]
+	   signingSessionsMutex.Unlock()
+	   if !ok {
+			   r.Response.WriteJson(g.Map{"error": "Session not found"})
+			   return
+	   }
+	   r.Response.WriteJson(g.Map{"session": session})
 }
